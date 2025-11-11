@@ -1,0 +1,29 @@
+{
+  "tests": [
+    {
+      "name": "Get messages without auth",
+      "method": "GET",
+      "path": "/",
+      "expectedStatus": 401,
+      "bodyMatcher": "partial"
+    },
+    {
+      "name": "Send message",
+      "method": "POST",
+      "path": "/",
+      "headers": {
+        "X-User-Email": "test@OnliMess"
+      },
+      "body": {
+        "to": "user@OnliMess",
+        "text": "Hello",
+        "timestamp": 1234567890
+      },
+      "expectedStatus": 200,
+      "expectedBody": {
+        "success": true
+      },
+      "bodyMatcher": "partial"
+    }
+  ]
+}

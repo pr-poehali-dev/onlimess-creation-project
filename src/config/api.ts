@@ -1,0 +1,5 @@
+export const API_URLS = {
+  auth: 'https://functions.poehali.dev/f7f06c75-965a-41e8-93c1-20ea61e7707f',
+  messages: 'https://functions.poehali.dev/757d7a44-1803-43f8-a816-31bb11effebd',
+  contacts: 'https://functions.poehali.dev/2ab9200c-a169-43b5-ba30-b1c04b3a7ba9',
+};

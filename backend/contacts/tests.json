@@ -1,0 +1,28 @@
+{
+  "tests": [
+    {
+      "name": "Get contacts without auth",
+      "method": "GET",
+      "path": "/",
+      "expectedStatus": 401,
+      "bodyMatcher": "partial"
+    },
+    {
+      "name": "Add contact",
+      "method": "POST",
+      "path": "/",
+      "headers": {
+        "X-User-Email": "test@OnliMess"
+      },
+      "body": {
+        "email": "friend@OnliMess",
+        "displayName": "Friend"
+      },
+      "expectedStatus": 200,
+      "expectedBody": {
+        "success": true
+      },
+      "bodyMatcher": "partial"
+    }
+  ]
+}

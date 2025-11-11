@@ -6,10 +6,10 @@ import { ScrollArea } from '@/components/ui/scroll-area';
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { toast } from 'sonner';
 import Icon from '@/components/ui/icon';
+import { API_URLS } from '@/config/api';
 
 interface User {
   username: string;
-  password: string;
   email: string;
   displayName: string;
   isAdmin: boolean;
@@ -37,7 +37,7 @@ const Index = () => {
   const [setupName, setSetupName] = useState('');
   const [setupEmail, setSetupEmail] = useState('');
   const [showSetupDialog, setShowSetupDialog] = useState(false);
-  const [users, setUsers] = useState<User[]>([]);
+  const [users, setUsers] = useState<{ username: string; isFrozen: boolean; isAdmin: boolean }[]>([]);
   const [messages, setMessages] = useState<Message[]>([]);
   const [contacts, setContacts] = useState<Contact[]>([]);
   const [activeChat, setActiveChat] = useState<string | null>(null);
@@ -53,116 +53,131 @@ const Index = () => {
   const messagesEndRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
-    const storedUsers = localStorage.getItem('onlimess-users');
-    if (storedUsers) {
-      setUsers(JSON.parse(storedUsers));
-    } else {
-      const adminUser: User = {
-        username: 'skzry',
-        password: '568876Qqq',
-        email: 'admin@OnliMess',
-        displayName: 'Администратор',
-        isAdmin: true,
-        isFrozen: false,
-        hasLoggedIn: false,
-      };
-      setUsers([adminUser]);
-      localStorage.setItem('onlimess-users', JSON.stringify([adminUser]));
-    }
-
-    const storedCurrentUser = localStorage.getItem('onlimess-current-user');
-    if (storedCurrentUser) {
-      setCurrentUser(JSON.parse(storedCurrentUser));
-    }
-
-    const storedMessages = localStorage.getItem('onlimess-messages');
-    if (storedMessages) {
-      setMessages(JSON.parse(storedMessages));
-    }
-
-    const storedContacts = localStorage.getItem('onlimess-contacts');
-    if (storedContacts) {
-      setContacts(JSON.parse(storedContacts));
+    const storedUser = localStorage.getItem('onlimess-user');
+    if (storedUser) {
+      const user = JSON.parse(storedUser);
+      setCurrentUser(user);
+      loadContacts(user.email);
+      loadMessages(user.email);
     }
   }, []);
 
   useEffect(() => {
-    if (users.length > 0) {
-      localStorage.setItem('onlimess-users', JSON.stringify(users));
-    }
-  }, [users]);
+    if (!currentUser) return;
 
-  useEffect(() => {
-    if (messages.length > 0) {
-      localStorage.setItem('onlimess-messages', JSON.stringify(messages));
-    }
-  }, [messages]);
-
-  useEffect(() => {
-    if (contacts.length > 0) {
-      localStorage.setItem('onlimess-contacts', JSON.stringify(contacts));
-    }
-  }, [contacts]);
-
-  useEffect(() => {
-    if (currentUser) {
-      localStorage.setItem('onlimess-current-user', JSON.stringify(currentUser));
-    }
-  }, [currentUser]);
-
-  useEffect(() => {
     const interval = setInterval(() => {
-      const storedMessages = localStorage.getItem('onlimess-messages');
-      if (storedMessages) {
-        const parsedMessages = JSON.parse(storedMessages);
-        if (parsedMessages.length > messages.length && currentUser) {
-          const newMessages = parsedMessages.filter(
-            (msg: Message) => 
-              msg.to === currentUser.email && 
-              !messages.find((m) => m.id === msg.id)
-          );
-          if (newMessages.length > 0) {
-            toast.success('Получено новое сообщение', {
-              duration: 3000,
-            });
-          }
-          setMessages(parsedMessages);
-        }
-      }
+      loadMessages(currentUser.email);
     }, 1000);
 
     return () => clearInterval(interval);
-  }, [messages, currentUser]);
+  }, [currentUser, messages]);
 
   useEffect(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
   }, [messages, activeChat]);
 
-  const handleLogin = () => {
-    const user = users.find(
-      (u) => u.username === loginUsername && u.password === loginPassword
-    );
-
-    if (!user) {
-      toast.error('Неверный логин или пароль');
-      return;
+  useEffect(() => {
+    if (currentUser?.isAdmin) {
+      loadUsers();
     }
+  }, [currentUser]);
 
-    if (user.isFrozen) {
-      toast.error('Профиль заблокирован');
-      return;
-    }
-
-    if (!user.hasLoggedIn) {
-      setShowSetupDialog(true);
-      setCurrentUser(user);
-    } else {
-      setCurrentUser(user);
-      toast.success(`Добро пожаловать, ${user.displayName}!`);
+  const loadUsers = async () => {
+    try {
+      const response = await fetch(API_URLS.auth);
+      const data = await response.json();
+      setUsers(data.users);
+    } catch (error) {
+      console.error('Error loading users:', error);
     }
   };
 
-  const handleSetupComplete = () => {
+  const loadContacts = async (userEmail: string) => {
+    try {
+      const response = await fetch(API_URLS.contacts, {
+        headers: {
+          'X-User-Email': userEmail,
+        },
+      });
+      const data = await response.json();
+      setContacts(data.contacts);
+    } catch (error) {
+      console.error('Error loading contacts:', error);
+    }
+  };
+
+  const loadMessages = async (userEmail: string) => {
+    try {
+      const response = await fetch(API_URLS.messages, {
+        headers: {
+          'X-User-Email': userEmail,
+        },
+      });
+      const data = await response.json();
+      
+      if (data.messages.length > messages.length) {
+        const newMessages = data.messages.filter(
+          (msg: Message) => !messages.find((m) => m.id === msg.id)
+        );
+        if (newMessages.length > 0 && messages.length > 0) {
+          toast.success('Получено новое сообщение', {
+            duration: 3000,
+          });
+        }
+      }
+      
+      setMessages(data.messages);
+    } catch (error) {
+      console.error('Error loading messages:', error);
+    }
+  };
+
+  const handleLogin = async () => {
+    try {
+      const response = await fetch(API_URLS.auth, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          action: 'login',
+          username: loginUsername,
+          password: loginPassword,
+        }),
+      });
+
+      const data = await response.json();
+
+      if (!response.ok) {
+        toast.error(data.error || 'Ошибка входа');
+        return;
+      }
+
+      const user: User = {
+        username: loginUsername,
+        email: data.email,
+        displayName: data.displayName,
+        isAdmin: data.isAdmin,
+        isFrozen: data.isFrozen,
+        hasLoggedIn: data.hasLoggedIn,
+      };
+
+      if (!data.hasLoggedIn) {
+        setShowSetupDialog(true);
+        setCurrentUser(user);
+      } else {
+        setCurrentUser(user);
+        localStorage.setItem('onlimess-user', JSON.stringify(user));
+        loadContacts(data.email);
+        loadMessages(data.email);
+        toast.success(`Добро пожаловать, ${data.displayName}!`);
+      }
+    } catch (error) {
+      toast.error('Ошибка подключения к серверу');
+    }
+  };
+
+  const handleSetupComplete = async () => {
     if (!setupName || !setupEmail) {
       toast.error('Заполните все поля');
       return;
@@ -173,72 +188,134 @@ const Index = () => {
       return;
     }
 
-    const updatedUser = {
-      ...currentUser!,
-      displayName: setupName,
-      email: setupEmail,
-      hasLoggedIn: true,
-    };
+    try {
+      const response = await fetch(API_URLS.auth, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          action: 'setup',
+          username: currentUser?.username,
+          displayName: setupName,
+          email: setupEmail,
+        }),
+      });
 
-    setUsers(users.map((u) => (u.username === currentUser?.username ? updatedUser : u)));
-    setCurrentUser(updatedUser);
-    setShowSetupDialog(false);
-    toast.success('Профиль настроен!');
+      if (!response.ok) {
+        toast.error('Ошибка настройки профиля');
+        return;
+      }
+
+      const updatedUser = {
+        ...currentUser!,
+        displayName: setupName,
+        email: setupEmail,
+        hasLoggedIn: true,
+      };
+
+      setCurrentUser(updatedUser);
+      localStorage.setItem('onlimess-user', JSON.stringify(updatedUser));
+      setShowSetupDialog(false);
+      loadContacts(setupEmail);
+      loadMessages(setupEmail);
+      toast.success('Профиль настроен!');
+    } catch (error) {
+      toast.error('Ошибка подключения к серверу');
+    }
   };
 
-  const handleCreateUser = () => {
+  const handleCreateUser = async () => {
     if (!newUserLogin || !newUserPassword) {
       toast.error('Заполните все поля');
       return;
     }
 
-    if (users.find((u) => u.username === newUserLogin)) {
-      toast.error('Пользователь с таким логином уже существует');
-      return;
+    try {
+      const response = await fetch(API_URLS.auth, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          action: 'create_user',
+          username: newUserLogin,
+          password: newUserPassword,
+        }),
+      });
+
+      if (!response.ok) {
+        toast.error('Ошибка создания пользователя');
+        return;
+      }
+
+      setNewUserLogin('');
+      setNewUserPassword('');
+      loadUsers();
+      toast.success('Пользователь создан');
+    } catch (error) {
+      toast.error('Ошибка подключения к серверу');
     }
-
-    const newUser: User = {
-      username: newUserLogin,
-      password: newUserPassword,
-      email: '',
-      displayName: '',
-      isAdmin: false,
-      isFrozen: false,
-      hasLoggedIn: false,
-    };
-
-    setUsers([...users, newUser]);
-    setNewUserLogin('');
-    setNewUserPassword('');
-    toast.success('Пользователь создан');
   };
 
-  const handleToggleFrozen = (username: string) => {
-    setUsers(
-      users.map((u) =>
-        u.username === username ? { ...u, isFrozen: !u.isFrozen } : u
-      )
-    );
-    toast.success('Статус пользователя обновлён');
+  const handleToggleFrozen = async (username: string) => {
+    try {
+      const response = await fetch(API_URLS.auth, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          action: 'toggle_frozen',
+          username: username,
+        }),
+      });
+
+      if (!response.ok) {
+        toast.error('Ошибка обновления статуса');
+        return;
+      }
+
+      loadUsers();
+      toast.success('Статус пользователя обновлён');
+    } catch (error) {
+      toast.error('Ошибка подключения к серверу');
+    }
   };
 
-  const handleSendMessage = () => {
+  const handleSendMessage = async () => {
     if (!messageText.trim() || !activeChat || !currentUser) return;
 
-    const newMessage: Message = {
-      id: Date.now().toString(),
-      from: currentUser.email,
-      to: activeChat,
-      text: messageText,
-      timestamp: Date.now(),
-    };
+    const timestamp = Date.now();
 
-    setMessages([...messages, newMessage]);
-    setMessageText('');
-    setTypingUsers({ ...typingUsers, [currentUser.email]: false });
+    try {
+      const response = await fetch(API_URLS.messages, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'X-User-Email': currentUser.email,
+        },
+        body: JSON.stringify({
+          to: activeChat,
+          text: messageText,
+          timestamp: timestamp,
+        }),
+      });
+
+      if (!response.ok) {
+        toast.error('Ошибка отправки сообщения');
+        return;
+      }
+
+      setMessageText('');
+      setTypingUsers({ ...typingUsers, [currentUser.email]: false });
+      loadMessages(currentUser.email);
+    } catch (error) {
+      toast.error('Ошибка подключения к серверу');
+    }
   };
 
-  const handleAddContact = () => {
+  const handleAddContact = async () => {
     if (!addContactEmail.includes('@OnliMess')) {
       toast.error('Email должен быть в домене @OnliMess');
       return;
@@ -249,41 +326,96 @@ const Index = () => {
       return;
     }
 
-    const user = users.find((u) => u.email === addContactEmail);
-    const newContact: Contact = {
-      email: addContactEmail,
-      displayName: user?.displayName || addContactEmail,
-    };
+    if (!currentUser) return;
 
-    setContacts([...contacts, newContact]);
-    setAddContactEmail('');
-    setShowAddContact(false);
-    toast.success('Контакт добавлен');
-  };
+    try {
+      const response = await fetch(API_URLS.contacts, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'X-User-Email': currentUser.email,
+        },
+        body: JSON.stringify({
+          email: addContactEmail,
+          displayName: addContactEmail,
+        }),
+      });
 
-  const handleDeleteChat = (email: string) => {
-    setMessages(messages.filter((m) => m.from !== email && m.to !== email));
-    if (activeChat === email) {
-      setActiveChat(null);
+      if (!response.ok) {
+        toast.error('Ошибка добавления контакта');
+        return;
+      }
+
+      setAddContactEmail('');
+      setShowAddContact(false);
+      loadContacts(currentUser.email);
+      toast.success('Контакт добавлен');
+    } catch (error) {
+      toast.error('Ошибка подключения к серверу');
     }
-    toast.success('Чат удалён');
   };
 
-  const handleEditContactName = (email: string) => {
-    if (!editContactName.trim()) return;
-    setContacts(
-      contacts.map((c) => (c.email === email ? { ...c, displayName: editContactName } : c))
-    );
-    setEditingContact(null);
-    setEditContactName('');
-    toast.success('Имя контакта обновлено');
+  const handleDeleteChat = async (email: string) => {
+    if (!currentUser) return;
+
+    try {
+      const response = await fetch(API_URLS.messages, {
+        method: 'DELETE',
+        headers: {
+          'Content-Type': 'application/json',
+          'X-User-Email': currentUser.email,
+        },
+        body: JSON.stringify({
+          contact: email,
+        }),
+      });
+
+      if (!response.ok) {
+        toast.error('Ошибка удаления чата');
+        return;
+      }
+
+      if (activeChat === email) {
+        setActiveChat(null);
+      }
+      loadMessages(currentUser.email);
+      toast.success('Чат удалён');
+    } catch (error) {
+      toast.error('Ошибка подключения к серверу');
+    }
+  };
+
+  const handleEditContactName = async (email: string) => {
+    if (!editContactName.trim() || !currentUser) return;
+
+    try {
+      const response = await fetch(API_URLS.contacts, {
+        method: 'PUT',
+        headers: {
+          'Content-Type': 'application/json',
+          'X-User-Email': currentUser.email,
+        },
+        body: JSON.stringify({
+          email: email,
+          displayName: editContactName,
+        }),
+      });
+
+      if (!response.ok) {
+        toast.error('Ошибка обновления имени');
+        return;
+      }
+
+      setEditingContact(null);
+      setEditContactName('');
+      loadContacts(currentUser.email);
+      toast.success('Имя контакта обновлено');
+    } catch (error) {
+      toast.error('Ошибка подключения к серверу');
+    }
   };
 
   const getLastSeen = (email: string) => {
-    const user = users.find((u) => u.email === email);
-    if (!user) return 'Недавно';
-    if (!user.hasLoggedIn) return 'Недавно';
-    
     const userMessages = messages.filter((m) => m.from === email);
     if (userMessages.length === 0) return 'Недавно';
     
@@ -430,7 +562,7 @@ const Index = () => {
               size="icon"
               onClick={() => {
                 setCurrentUser(null);
-                localStorage.removeItem('onlimess-current-user');
+                localStorage.removeItem('onlimess-user');
               }}
             >
               <Icon name="LogOut" size={20} />
